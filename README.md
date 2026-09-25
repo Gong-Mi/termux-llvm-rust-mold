@@ -22,10 +22,9 @@ Termux（aarch64）自举工具链**三合一包**：一个 `.deb` 同时提供
 # 方式一：脚本（自动下载最新版 + 校验 sha256 + apt 安装）
 curl -fsSL https://raw.githubusercontent.com/Gong-Mi/termux-llvm-rust-mold/main/install.sh | bash
 
-# 方式二：手动
-TAG=23.1.3-rust1.100.0-mold2.42.1-2
+# 方式二：手动（latest 指最新一个 release）
 DEB=llvm-rust-system_23.1.3+rust1.100.0nightly+mold2.42.1-2_aarch64.deb
-BASE=https://github.com/Gong-Mi/termux-llvm-rust-mold/releases/download/v$TAG
+BASE=https://github.com/Gong-Mi/termux-llvm-rust-mold/releases/latest/download
 curl -LO $BASE/$DEB
 curl -LO $BASE/$DEB.sha256
 sha256sum -c $DEB.sha256
