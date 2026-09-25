@@ -49,7 +49,8 @@ apt remove llvm-rust-system
 apt install clang lld llvm libllvm rust libcompiler-rt mold   # 装回官方包
 ```
 
-本仓库另有一个 release `rollback-official-21.1.8`，里面是官方仓库当时的 6 个 `.deb`
+本仓库另有一个 release `rollback-official-21.1.8`（标记为 Pre-release，避免抢占
+latest 指针），里面是官方仓库当时的 6 个 `.deb`
 （`clang` / `lld` / `llvm` / `libllvm` / `libcompiler-rt` 21.1.8-3 与 `rust` 1.98.1），
 断网或官方源不可用时可直接回滚：
 
@@ -147,3 +148,8 @@ LD_LIBRARY_PATH=$PREFIX/lib ./hello
 
 每个 release 一个 tag，asset 里挂 `.deb` + `.sha256`。每个包约 306 MiB，
 仓库只保留最近 2–3 个版本，旧 asset 单独删除（tag 保留）。
+
+**非工具链的 release（例如官方回滚集）必须勾选 Pre-release**，否则它比版本 release
+新，会抢走 GitHub 的 `releases/latest` 指针，`releases/latest/download/...` 链接就指错了。
+（`install.sh` 按 asset 名 `llvm-rust-system_*_aarch64.deb` 过滤，并核对下载到的包
+`Package` 字段，所以即使指针漂了也不会装错包。）
