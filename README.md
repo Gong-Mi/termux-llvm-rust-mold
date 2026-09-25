@@ -73,7 +73,31 @@ tools/publish-release.sh    发布新版本：<deb> → tag + release + asset + 
 tools/prune-releases.sh     只保留最近 N 个版本 release，旧的连 tag 一起删
 packaging/repack-with-license.sh  在已有 .deb 数据层上注入 share/doc 许可、升版本号
 packaging/copyright         随包安装的许可/来源文件（DEP-5 格式）
+packaging/patches/          本包用到的 3 个 LLVM 补丁 + Termux 官方 rpath 补丁（见下）
 ```
+
+## 已知缺口（与官方 clang 的差异）
+
+**C++ 链接出的可执行文件默认不带 `$PREFIX/lib` 的 rpath**，直接运行会报：
+
+```
+CANNOT LINK EXECUTABLE "./a.out": library "libc++_shared.so" not found: needed by main executable
+```
+
+原因：本包只移植了 Termux 的 `-lc++_shared` 补丁，没移植 Termux 官方的
+`clang-lib-Driver-ToolChains-Linux.cpp.patch`（它在 Android 目标上默认加
+`-rpath=$PREFIX/lib`，并带 `-ftermux-rpath/-fno-termux-rpath` 开关）。
+补丁已放在 `packaging/patches/0004-termux-clang-rpath.patch`，下个版本补进 clang。
+
+现在绕过（两种都实测有效）：
+
+```bash
+clang++ -O2 -Wl,-rpath,$PREFIX/lib hello.cpp -o hello && ./hello
+LD_LIBRARY_PATH=$PREFIX/lib ./hello
+```
+
+不受影响：C 程序（libc/libm 在 `/system/lib64`）、`rustc`/`cargo`（Rust 侧 link-args 自带 rpath）、
+包内自带工具（`clang`/`llvm-*`/`mold` 的 RUNPATH 是 `$ORIGIN/../lib`）。
 
 ## 为什么自己做
 

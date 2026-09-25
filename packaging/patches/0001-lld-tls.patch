@@ -1,0 +1,19 @@
+diff --git a/lld/ELF/Writer.cpp b/lld/ELF/Writer.cpp
+index 635bb47defb83..59e019fe838c3 100644
+--- a/lld/ELF/Writer.cpp
++++ b/lld/ELF/Writer.cpp
+@@ -2357,8 +2357,13 @@ SmallVector<std::unique_ptr<PhdrEntry>, 0> Writer<ELFT>::createPhdrs() {
+   // Add a TLS segment if any.
+   auto tlsHdr = std::make_unique<PhdrEntry>(ctx, PT_TLS, PF_R);
+   for (OutputSection *sec : ctx.outputSections)
+-    if (sec->flags & SHF_TLS)
++    if (sec->flags & SHF_TLS) {
++      if (ctx.arg.emachine == EM_AARCH64 && ctx.arg.androidPackDynRelocs)
++        sec->addralign = std::max(sec->addralign, 64U);
+       tlsHdr->add(sec);
++    }
++  if (ctx.arg.emachine == EM_AARCH64 && ctx.arg.androidPackDynRelocs)
++    tlsHdr->p_align = std::max<uint64_t>(tlsHdr->p_align, 64);
+   if (tlsHdr->firstSec)
+     ret.push_back(std::move(tlsHdr));
+ 

@@ -1,0 +1,13 @@
+diff --git a/clang/lib/Driver/ToolChain.cpp b/clang/lib/Driver/ToolChain.cpp
+index f894a0635de13..e0195357d0fb3 100644
+--- a/clang/lib/Driver/ToolChain.cpp
++++ b/clang/lib/Driver/ToolChain.cpp
+@@ -1778,7 +1778,7 @@ void ToolChain::AddCXXStdlibLibArgs(const ArgList &Args,
+ 
+   switch (Type) {
+   case ToolChain::CST_Libcxx:
+-    CmdArgs.push_back("-lc++");
++    CmdArgs.push_back(getTriple().isAndroid() ? "-lc++_shared" : "-lc++");
+     if (Args.hasArg(options::OPT_fexperimental_library))
+       CmdArgs.push_back("-lc++experimental");
+     break;
