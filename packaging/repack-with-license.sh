@@ -42,8 +42,9 @@ dpkg-deb --fsys-tarfile "$BASE" | tar xf - -C "$STAGE"
 echo "  文件数: $(find "$STAGE" -type f | wc -l)"
 
 echo "=== 2/4 注入 share/doc/$PKG/copyright ==="
-install -d -m 755 "$STAGE$PREFIX/share/doc/$PKG"
-install -m 644 "$DOC" "$STAGE$PREFIX/share/doc/$PKG/copyright"
+install -d -m 700 "$STAGE$PREFIX/share/doc"
+install -d -m 700 "$STAGE$PREFIX/share/doc/$PKG"
+install -m 600 "$DOC" "$STAGE$PREFIX/share/doc/$PKG/copyright"
 
 echo "=== 3/4 重写 control ==="
 mkdir -p "$STAGE/DEBIAN"; chmod 755 "$STAGE/DEBIAN"
