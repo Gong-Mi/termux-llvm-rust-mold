@@ -1,0 +1,35 @@
+From d9fd44fb400a61c121d00522f3026400964755fb Mon Sep 17 00:00:00 2001
+From: Gong-Mi <62661921+Gong-Mi@users.noreply.github.com>
+Date: Sun, 27 Sep 2026 14:40:32 +0800
+Subject: [PATCH] Termux: floor SHF_TLS output-section p2align at 6 on Arm64
+
+Bionic on ARM64 requires PT_TLS p_align >= 64 and aborts mold-linked
+executables otherwise ("TLS segment is underaligned"). Floor the output
+TLS section alignment so the program header inherits a conforming p_align.
+---
+ src/passes.rs | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/passes.rs b/src/passes.rs
+index 9553b342..ec67d69d 100644
+--- a/src/passes.rs
++++ b/src/passes.rs
+@@ -1217,6 +1217,15 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
+         let osec = &mut ctx.output_sections[id.index()];
+         osec.members = members;
+         osec.hdr.shdr.sh_flags.set(sh_flags);
++        // Bionic on ARM64 requires PT_TLS p_align >= 64 ("executable's TLS
++        // segment is underaligned" abort in the Android linker). Floor the
++        // output TLS section alignment at 64 so the program header created
++        // from it inherits a conforming p_align.
++        let p2align = if E::FAMILY == Family::Arm64 && sh_flags & SHF_TLS as u64 != 0 {
++            p2align.max(6)
++        } else {
++            p2align
++        };
+         osec.hdr.shdr.sh_addralign.set(1 << p2align);
+         osec.hdr.is_relro = is_relro(osec);
+     }
+-- 
+2.55.0
+

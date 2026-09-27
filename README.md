@@ -6,7 +6,7 @@ Termux（aarch64）自举工具链**三合一包**：一个 `.deb` 同时提供
 |---|---|---|
 | LLVM / Clang / LLD / MLIR / compiler-rt | 23.1.3 | PGO 构建（IR 插桩自举训练，profile `llvm-23.1.pgo.profdata`，9441 runs） |
 | Rust | 1.100.0-nightly (rustc `0d38a8426` 2026-09-24, cargo `98a09e7e7` 2026-09-21) | stage2 自举，动态链接本包 `libLLVM.so.23.1` |
-| mold | 2.42.1 (`6fc6e191`, 2026-09-23) | MIT；`mold` + `ld.mold` + `mold-wrapper.so` |
+| mold | 2.42.1 (`6fc6e191`, 2026-09-23) | MIT；`mold` + `ld.mold` + `mold-wrapper.so`；带 Termux TLS 补丁（见 patches/0005） |
 
 包名 `llvm-rust-system`，`Architecture: aarch64`。
 下载 **约 306 MiB**，安装后 **约 2.44 GB**（8045 个文件）。
@@ -23,7 +23,7 @@ Termux（aarch64）自举工具链**三合一包**：一个 `.deb` 同时提供
 curl -fsSL https://raw.githubusercontent.com/Gong-Mi/termux-llvm-rust-mold/main/install.sh | bash
 
 # 方式二：手动（latest 指最新一个 release）
-DEB=llvm-rust-system_23.1.3+rust1.100.0nightly+mold2.42.1-2_aarch64.deb
+DEB=llvm-rust-system_23.1.3+rust1.100.0nightly+mold2.42.1-3_aarch64.deb
 BASE=https://github.com/Gong-Mi/termux-llvm-rust-mold/releases/latest/download
 curl -LO $BASE/$DEB
 curl -LO $BASE/$DEB.sha256
@@ -113,11 +113,12 @@ LD_LIBRARY_PATH=$PREFIX/lib ./hello
 | Rust 1.100.0-nightly | https://github.com/rust-lang/rust | rustc `0d38a842626a6e3b70e2c1efd76a8f22d2556d73` |
 | mold 2.42.1 | https://github.com/rui314/mold | `6fc6e1916f383ea3ea319e12d3df4daee33267d9` |
 
-附加的 Termux 兼容补丁（3 个，都是 LLVM 侧）：
+附加的 Termux 兼容补丁（4 个）：
 
 1. `lld` TLS 对齐（Android Bionic 要求 TLS `p_align=64`，AArch64 默认 8）
 2. `clang` 在 Android 目标上用 `-lc++_shared` 而不是 `-lc++`（`clang/lib/Driver/ToolChain.cpp`）
 3. ARM NEON f16mm 例外（当前为空补丁，占位）
+4. `mold` TLS 对齐（同 1 的 mold 侧对应；`packaging/patches/0005-mold-tls-p2align-arm64.patch`，floor SHF_TLS 输出节 p2align≥6）。`-3` 之前包内 mold 二进制未带此补丁，mold 链接的 TLS 可执行文件运行即 abort（"TLS segment is underaligned"）；`-3` 起修复。
 
 其它已知处理：
 - LLVM 工具 RUNPATH 统一为 `$ORIGIN/../lib`（clang/libLLVM），避免构建树路径泄漏；
