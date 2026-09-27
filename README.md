@@ -76,6 +76,43 @@ packaging/copyright         随包安装的许可/来源文件（DEP-5 格式）
 packaging/patches/          本包用到的 3 个 LLVM 补丁 + Termux 官方 rpath 补丁（见下）
 ```
 
+## 支持哪些 CPU 编译目标（重要）
+
+**clang / clang++（本包主前端）只编 AArch64 系**。编译目标是构建时定的
+（`LLVM_TARGETS_TO_BUILD`），装好后不能加。
+
+实测（`clang --print-targets`，仅 5 个注册目标）：
+
+```
+aarch64     aarch64_32   aarch64_be   arm64   arm64_32
+```
+
+| 想编什么 | 结果 |
+|---|---|
+| `--target=aarch64-linux-android30`（默认） | ✅ |
+| `--target=armv7a-linux-androideabi30` / `armv7-unknown-linux-...` | ❌ `No available targets are compatible with triple "armv7-..."` |
+| `--target=x86_64-linux-android30` / `i686-...` | ❌ 同上 |
+| `--target=riscv64-...` / `wasm32-...` / `amdgcn-...` / `nvptx64-...` 等 | ❌ 同上（clang 前端无这些后端） |
+
+rustc 同理：`rustc --print target-list` 能列出 armv7 等 target spec，但
+`rustc --target armv7-linux-androideabi` 实际 codegen 报
+`No available targets are compatible with triple "arm-none-linux-android"`。
+
+**例外**：包内自带旧 `llc`/`opt`/`llvm-mc` 等 rc1 期工具（链接
+`libLLVM.so.23.1-rc1`）注册了 10 个后端（AArch64/AMDGPU/BPF/LoongArch/
+NVPTX/RISCV/SPIRV/SystemZ/VE/WebAssembly）。这些是 IR 层工具，**不能**给
+clang 前端加目标，32 位 ARM 也不在其中。想编 armv7：要么找带 ARM(32) 后端
+的交叉 clang，要么用本包配 NDK 的 arm 工具链。
+
+**AArch64 上可用的 -mcpu/-mtune**（`clang --print-supported-cpus`，101 个）：
+apple-a7..a19/m1..m5/s4..s10 全系、cortex-a32~a78c/a510~a725/x1~x925/
+r82/r82ae、neoverse-e1/n1~n3/v1~v3(ae)、oryon-1、thunderx/t99/t110/xt81~88、
+ampere1(a/b/c)、a64fx、fujitsu-monaka、grace、gb10、exynos-m3~m5、kryo、
+falkor、carmel、tsv110、cyclone、olympus、rigel、saphira、cobalt-100、
+armagicpu、c1-nano/premium/pro/ultra、generic、native。
+
+通用命令：`clang --print-targets`、`clang --print-supported-cpus`。
+
 ## 已知缺口（与官方 clang 的差异）
 
 **C++ 链接出的可执行文件默认不带 `$PREFIX/lib` 的 rpath**，直接运行会报：
