@@ -41,9 +41,16 @@ echo "=== 1/5 解析 release ==="
 if [ -n "$TAG" ]; then
   JSON=$(curl -fsSL "$API/releases/tags/$TAG") || die "取 release $TAG 失败（网络/代理？）"
 else
-  JSON=$(curl -fsSL "$API/releases?per_page=30") || die "取 release 列表失败（网络/代理？）"
+  # 用 /releases/latest（GitHub 的 Latest 指针 = 最新正式版）。
+  # 注意：/releases?per_page=N 的 JSON 顺序**不是**日期序（实测旧版会排在前面），
+  # 不能靠它 head -1 取最新 —— 那样会静默装到旧包。
+  JSON=$(curl -fsSL "$API/releases/latest" 2>/dev/null || true)
+  case "$JSON" in
+    *"${PKG}_"*"_aarch64.deb"*) : ;;
+    *) JSON=$(curl -fsSL "$API/releases?per_page=30") || die "取 release 列表失败（网络/代理？）" ;;
+  esac
 fi
-# 只认本包命名的 asset；列表按新→旧排序，所以 head -1 即最新版本
+# 只认本包命名的 asset（latest 是单个 release 对象，也走同一套解析）
 ASSET=$(printf '%s' "$JSON" \
         | grep -o "https://[^\"]*/releases/download/[^\"]*/${PKG}_[^\"]*_aarch64\.deb" \
         | head -1 || true)
@@ -53,7 +60,7 @@ DEB=$(printf '%s' "$JSON" \
       | grep -o "\"name\": *\"${PKG}_[^\"]*_aarch64\.deb\"" | head -1 \
       | sed -E 's/.*"name": *"([^"]+)".*/\1/' || true)
 [ -n "$DEB" ] || die "release 里 asset 名解析失败"
-TAG_NAME=$(printf '%s' "$ASSET" | sed -E 's#.*/releases/download/([^/]+)/.*#\1#')
+TAG_NAME=$(printf '%s' "$ASSET" | sed -E 's#.*/releases/download/([^/]+)/.*#\1#; s/%2B/+/g')  # URL 里的 + 是 %2B，仅显示用
 echo "  tag   : $TAG_NAME"
 echo "  包    : $DEB"
 
