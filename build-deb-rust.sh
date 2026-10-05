@@ -92,6 +92,27 @@ done
 sort -u "$WORK/new.txt" -o "$WORK/new.txt"
 echo "  NEW: $(wc -l < "$WORK/new.txt") 项"
 
+echo "=== 3b/6 剔除源码（rustc-dev 里附带的 crate 源码 / rustc-src），保留 librustc_driver*.so ==="
+# rustc-dev 既提供 rustc_private 需要的 librustc_driver*.so，也附带一份 crate 源码
+# （lib/rustlib/src/rust/** 与 rustc-src/rust/**）。只丢源码、留驱动：
+# 源码不是编译/运行所需，去掉后 rustc_private 工具照常；源码可从 rustc-nightly-src.tar.xz 自取。
+if [ "${STRIP_SRC:-1}" = "1" ]; then
+  for d in "$STAGE$PREFIX/lib/rustlib/src" "$STAGE$PREFIX/lib/rustlib/rustc-src"; do
+    if [ -e "$d" ]; then
+      n=$(find "$d" -type f 2>/dev/null | wc -l); b=$(du -sk "$d" 2>/dev/null | cut -f1)
+      rm -rf "$d"
+      echo "  移除 ${d#$STAGE} （${n} 文件 / ${b} KB）"
+    fi
+  done
+  # 同步把它们从“新集”里去掉 → 旧包里的对应文件会被判为陈旧，升级时删除
+  if [ -f "$WORK/new.txt" ]; then
+    grep -v -e "$PREFIX/lib/rustlib/src" -e "$PREFIX/lib/rustlib/rustc-src" "$WORK/new.txt" > "$WORK/new.tmp" && mv "$WORK/new.tmp" "$WORK/new.txt"
+    echo "  NEW 已剔除源码路径，剩余 $(wc -l < "$WORK/new.txt") 项"
+  fi
+else
+  echo "  （STRIP_SRC=0，保留源码）"
+fi
+
 echo "=== 4/6 清陈旧（OLD − NEW = base 提供而新组件不再提供的）==="
 comm -23 "$WORK/old.txt" "$WORK/new.txt" > "$WORK/stale.txt"
 n=$(wc -l < "$WORK/stale.txt")

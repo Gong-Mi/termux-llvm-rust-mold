@@ -174,8 +174,10 @@ LD_LIBRARY_PATH=$PREFIX/lib ./hello
 - `build-rust.sh`、`build-mold.sh`、`build-mold-selfhosted.sh`、`build-deb-rust.sh`、`packaging/repack-mold.sh` —— 可执行脚本
 - `bootstrap.toml`、`packaging/apply-rust-patches.py`、`packaging/rust-patches/` —— rust 侧配置与补丁序列
 
-包内**不再携带 rust 源码**（rust-src）——源码可从 `static.rust-lang.org/dist/<date>/rustc-nightly-src.tar.xz`
-按配方自取；`libLLVM` 统一为全目标构建，clang 与 rustc 共用同一份。
+包内**完全不带源码**（既无独立的 rust-src 组件，也不含 rustc-dev 附带的 crate 源码），
+只保留 `rustc_private` 需要的 `librustc_driver*.so`/`.rmeta`；源码可从
+`static.rust-lang.org/dist/<date>/rustc-nightly-src.tar.xz` 按配方自取。
+`libLLVM` 统一为全目标构建，clang 与 rustc 共用同一份。
 
 ## 兼容性与风险
 
