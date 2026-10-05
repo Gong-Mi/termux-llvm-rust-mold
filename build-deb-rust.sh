@@ -167,6 +167,8 @@ SIZE=$(du -sk "$STAGE" | cut -f1)
   for f in Replaces Provides Depends Conflicts; do
     v=$(dpkg-deb -f "$BASE" "$f" 2>/dev/null || true); [ -n "$v" ] && echo "$f: $v"
   done
+  # 跨 ABI（armv7a/i686/x86_64）链接需要系统自带的多 ABI sysroot 包；不在本包内 → 用 Recommends
+  echo "Recommends: ndk-multilib, ndk-multilib-native-static, ndk-multilib-native-stubs, ndk-sysroot"
   echo "Description: $(dpkg-deb -f "$BASE" Description | head -1 | sed 's/^Description: //')"
   dpkg-deb -f "$BASE" Description | tail -n +2 | sed 's/^ / /'
   echo " LLVM, Rust and mold are all built by this toolchain's own clang (self-hosted),"
