@@ -1,0 +1,14 @@
+--- a/library/sysroot/Cargo.toml
++++ b/library/sysroot/Cargo.toml
+@@ -32,3 +32,11 @@
+ panic-unwind = ["std/panic-unwind"]
+ profiler = ["dep:profiler_builtins"]
+ windows_raw_dylib = ["std/windows_raw_dylib"]
++
++# These crates (std: panic_abort; sysroot: proc_macro/profiler_builtins/test) are
++# link-time/`public` dependencies that cargo's `unused_dependencies` manifest lint
++# cannot see (they are pulled via attributes / the sysroot's link graph), so the
++# lint false-positives here. Allowing just that lint keeps `build.warnings = deny`
++# meaningful for real warnings.
++[lints.cargo]
++unused_dependencies = "allow"

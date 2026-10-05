@@ -1,0 +1,9 @@
+# 构建日志与临时产物
+*.log
+# 本地构建出的二进制（发布走 release，不入库）
+mold-843419
+mold-lldlinked-backup
+mold-selfhosted-*
+# 打包暂存/输出
+/toolchain-repack-stage/
+/toolchain-rust-stage/

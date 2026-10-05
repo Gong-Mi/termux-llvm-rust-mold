@@ -1,0 +1,14 @@
+--- a/compiler/rustc/src/main.rs
++++ b/compiler/rustc/src/main.rs
+@@ -1,7 +1,10 @@
+ // We need this feature as it changes `dylib` linking behavior and allows us to link to `rustc_driver`.
+ #![feature(rustc_private)]
+ // Several crates are depended upon but unused so that they are present in the sysroot
+-#![expect(unused_crate_dependencies)]
++// Termux/android: with the signal-handler cfg extended to target_os = "android"
++// (see 0002-no-signal_handler.patch), every dependency of this crate is used on
++// Android, so the expectation below would be unfulfilled and denied by build.warnings.
++#![cfg_attr(not(target_os = "android"), expect(unused_crate_dependencies))]
+ 
+ use std::process::ExitCode;
+ 

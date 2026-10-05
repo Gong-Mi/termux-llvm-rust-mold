@@ -164,6 +164,19 @@ LD_LIBRARY_PATH=$PREFIX/lib ./hello
 - `libLLVM.so.23.1-rc1` 与 `libLLVM.so.23.1` 共存，旧的 23.1.0rc1 工具仍可用；
 - BOLT **未包含**：AArch64 上 `llvm-bolt` 运行时在 `initSizeMap` 崩溃，上游用 `DISABLE_LLVM_LINK_LLVM_DYLIB` 静态链接才可用，官方不修，本地不复现。
 
+### 构建配方
+
+逐步复现这套工具链的配方（三树 PGO、设备上**原生** rust stage2、mold 的 Cortex-A53 843419 实现、
+打包与装后验收，以及一路踩过的坑）见：
+
+- `packaging/BUILD.md` —— 配方正文（随本包发布在 `share/doc/llvm-rust-system/BUILD.md`）
+- `skills/termux-llvm-bootstrap/` —— 对应的 agent 技能（`references/` + `scripts/` + `templates/`）
+- `build-rust.sh`、`build-mold.sh`、`build-mold-selfhosted.sh`、`build-deb-rust.sh`、`packaging/repack-mold.sh` —— 可执行脚本
+- `bootstrap.toml`、`packaging/apply-rust-patches.py`、`packaging/rust-patches/` —— rust 侧配置与补丁序列
+
+包内**不再携带 rust 源码**（rust-src）——源码可从 `static.rust-lang.org/dist/<date>/rustc-nightly-src.tar.xz`
+按配方自取；`libLLVM` 统一为全目标构建，clang 与 rustc 共用同一份。
+
 ## 兼容性与风险
 
 - 仅 **aarch64**（arm64）Termux，`$PREFIX=/data/data/com.termux/files/usr`，clang 默认目标 `aarch64-unknown-linux-android30`。

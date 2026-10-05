@@ -1,41 +1,75 @@
+diff --git a/clang/include/clang/Options/Options.td b/clang/include/clang/Options/Options.td
+index f893d858d526..e1bb2a606fc9 100644
+--- a/clang/include/clang/Options/Options.td
++++ b/clang/include/clang/Options/Options.td
+@@ -6991,6 +6991,10 @@ let Visibility = [ClangOption, FlangOption] in {
+ 
+ def fPIC : Flag<["-"], "fPIC">, Group<f_Group>;
+ def fno_PIC : Flag<["-"], "fno-PIC">, Group<f_Group>;
++def ftermux_rpath : Flag<["-"], "ftermux-rpath">, Group<f_Group>,
++  HelpText<"Add Termux runtime-library rpaths to the linker command line">;
++def fno_termux_rpath : Flag<["-"], "fno-termux-rpath">, Group<f_Group>,
++  HelpText<"Do not add Termux runtime-library rpaths to the linker command line">;
+ def fPIE : Flag<["-"], "fPIE">, Group<f_Group>;
+ def fno_PIE : Flag<["-"], "fno-PIE">, Group<f_Group>;
+ def fpic : Flag<["-"], "fpic">, Group<f_Group>;
+diff --git a/clang/lib/Driver/ToolChains/Linux.cpp b/clang/lib/Driver/ToolChains/Linux.cpp
+index 8d30a5ead3bb..7d7cb34d9775 100644
 --- a/clang/lib/Driver/ToolChains/Linux.cpp
 +++ b/clang/lib/Driver/ToolChains/Linux.cpp
-@@ -162,8 +162,8 @@
+@@ -23,6 +23,7 @@
+ #include "llvm/Support/Path.h"
+ #include "llvm/Support/ScopedPrinter.h"
+ #include "llvm/Support/VirtualFileSystem.h"
++#include "llvm/TargetParser/Host.h"
+ 
+ using namespace clang::driver;
+ using namespace clang::driver::toolchains;
+@@ -196,8 +197,9 @@ static StringRef getOSLibDir(const llvm::Triple &Triple, const ArgList &Args) {
    // FIXME: This is a bit of a hack. We should really unify this code for
    // reasoning about oslibdir spellings with the lib dir spellings in the
    // GCCInstallationDetector, but that is a more significant refactoring.
 -  if (Triple.getArch() == llvm::Triple::x86 || Triple.isPPC32() ||
 -      Triple.getArch() == llvm::Triple::sparc)
-+  if (!Triple.isAndroid() && (Triple.getArch() == llvm::Triple::x86 || Triple.isPPC32() ||
-+      Triple.getArch() == llvm::Triple::sparc))
++  if (!Triple.isAndroid() &&
++      (Triple.getArch() == llvm::Triple::x86 || Triple.isPPC32() ||
++       Triple.getArch() == llvm::Triple::sparc))
      return "lib32";
  
    if (Triple.getArch() == llvm::Triple::x86_64 && Triple.isX32())
-@@ -287,6 +287,7 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
+@@ -365,7 +367,8 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
    }
  
    addPathIfExists(D, concat(SysRoot, "/usr/lib", MultiarchTriple), Paths);
+-  addPathIfExists(D, concat(SysRoot, "/usr", OSLibDir), Paths);
 +  if (!IsAndroid)
-   addPathIfExists(D, concat(SysRoot, "/usr", OSLibDir), Paths);
++    addPathIfExists(D, concat(SysRoot, "/usr", OSLibDir), Paths);
    if (IsRISCV) {
      StringRef ABIName = tools::riscv::getRISCVABI(Args, Triple);
-@@ -311,7 +311,20 @@
-     addPathIfExists(D, D.Dir + "/../lib", Paths);
+     addPathIfExists(D, concat(SysRoot, "/", OSLibDir, ABIName), Paths);
+@@ -375,7 +378,26 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
+   Generic_GCC::AddMultiarchPaths(D, SysRoot, OSLibDir, Paths);
  
    addPathIfExists(D, concat(SysRoot, "/lib"), Paths);
 -  addPathIfExists(D, concat(SysRoot, "/usr/lib"), Paths);
-+  bool nativeBuild = MultiarchTriple == getMultiarchTriple(D, llvm::Triple(llvm::sys::getDefaultTargetTriple()), SysRoot);
++  // Termux/Android: keep the host /usr/lib fallback for native builds only;
++  // add the Android system library directory and Termux RPATHs otherwise.
++  const bool nativeBuild = MultiarchTriple ==
++      getMultiarchTriple(D, llvm::Triple(llvm::sys::getDefaultTargetTriple()),
++                         SysRoot);
 +  if (nativeBuild || !IsAndroid)
 +    addPathIfExists(D, concat(SysRoot, "/usr/lib"), Paths);
 +
 +  if (IsAndroid) {
 +    addPathIfExists(D, concat(SysRoot, "/usr/", MultiarchTriple, "/lib"), Paths);
 +    addPathIfExists(D, concat("/system/", OSLibDir), Paths);
-+    if (Args.hasFlag(options::OPT_ftermux_rpath, options::OPT_fno_termux_rpath, true)) {
++    if (Args.hasFlag(options::OPT_ftermux_rpath, options::OPT_fno_termux_rpath,
++                     true)) {
 +      if (nativeBuild)
 +        ExtraOpts.push_back("-rpath=" + SysRoot + "/usr/lib");
 +      else
-+        ExtraOpts.push_back("-rpath=" + SysRoot + "/usr/" + MultiarchTriple + "/lib");
++        ExtraOpts.push_back("-rpath=" + SysRoot + "/usr/" + MultiarchTriple +
++                            "/lib");
 +    }
 +  }
  }

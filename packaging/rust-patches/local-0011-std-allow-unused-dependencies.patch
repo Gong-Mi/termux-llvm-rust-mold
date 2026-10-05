@@ -1,0 +1,12 @@
+--- a/library/std/Cargo.toml
++++ b/library/std/Cargo.toml
+@@ -167,3 +167,9 @@
+     'cfg(target_has_reliable_f128)',
+     'cfg(target_has_reliable_f128_math)',
+ ]
++
++# panic_abort is referenced through the `#![needs_panic_runtime]` attribute, which
++# cargo's `unused_dependencies` manifest lint cannot see. Silencing that one lint
++# keeps `build.warnings = deny` meaningful for real warnings.
++[lints.cargo]
++unused_dependencies = "allow"
