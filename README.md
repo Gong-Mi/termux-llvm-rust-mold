@@ -83,23 +83,26 @@ packaging/patches/          本包用到的 3 个 LLVM 补丁 + Termux 官方 rp
 
 `--target=` 只编译（`-c`）实测（2026-10-05，`-9`/`-10`）：
 
-| 目标 | 只编译 | 链接可执行 |
-|---|---|---|
-| `aarch64-linux-android30`（默认） | ✅ | ✅（含运行） |
-| `armv7a-linux-androideabi24/30`、`armv7-linux-androideabi` | ✅ ELF 32-bit ARM | ❌ 缺该 ABI 的 sysroot 件（见下） |
-| `x86_64-linux-android30` | ✅ ELF x86-64 | ❌ 同上 |
-| `i686-linux-android30` | ✅ ELF i386 | ❌ 同上 |
-| `riscv64-linux-android30` | ✅ ELF RISC-V | ❌ 同上 |
-| `wasm32-unknown-unknown` | ✅ wasm 模块 | —（无需 sysroot） |
-| `amdgcn-amd-amdhsa` | ✅ ELF AMDGPU | — |
-| `nvptx64-nvidia-cuda` | 需显式 GPU 架构（`--cuda-gpu-arch=`） | — |
+| 目标 | 只编译 | 链接可执行 | 本机运行 |
+|---|---|---|---|
+| `aarch64-linux-android30`（默认） | ✅ | ✅ | ✅ |
+| `armv7a-linux-androideabi24/30` | ✅ ELF32 ARM | ✅ ELF32 ARM PIE | ❌ 本机 `abilist32` 为空（Android 17 已去 32 位） |
+| `i686-linux-android30` | ✅ ELF32 i386 | ✅ ELF32 i386 PIE | ❌ 非本机架构 |
+| `x86_64-linux-android30` | ✅ ELF64 x86-64 | ✅ ELF64 x86-64 PIE | ❌ 非本机架构 |
+| `riscv64-linux-android30` | ✅ ELF64 RISC-V | ❌ 缺该 ABI 的 sysroot（Termux 多 ABI 包只含 4 个 ABI） | — |
+| `wasm32-unknown-unknown` | ✅ | — | — |
+| `amdgcn-amd-amdhsa` | ✅ | — | — |
 
-**为什么非 aarch64 还链不上**：链接可执行需要该 ABI 的 **sysroot 件** ——
-`libc.so`、`libunwind.a`、`crtbegin_*.o`/`crtend_*.o`、以及 C++ 时的 `libc++_shared.so`。
-Termux 的 `$PREFIX` 只提供 **aarch64** 那一套（`ndk-sysroot` 仅含各 ABI 的**头文件**）。
-本包已自带各 ABI 的 compiler-rt **builtins**（`lib/clang/23/lib/linux/libclang_rt.builtins-{aarch64,arm,i686,x86_64,riscv64}-android.a`，
-由本工具链自己按 `--target` + `-isystem <ABI 头目录>` 逐 ABI 编出），所以链接现在**只差** sysroot 那一族。
-补齐办法：引入 NDK 的 `sysroot/usr/lib/<triple>/<api>/`（或对应架构的 Termux 包）。
+**跨 ABI 链接靠 Termux 自己的多 ABI 依赖**（不需要重新编译 clang）：
+
+```bash
+pkg install ndk-multilib ndk-multilib-native-static ndk-multilib-native-stubs
+```
+
+它们把各 ABI 的 sysroot 件装到 **`$PREFIX/<triple>/lib`**（`libc.so`/`libunwind.a`/`crtbegin_*`/`libc++_shared.so` 共 27 项 × 4 个 ABI），
+而本包 clang 的驱动补丁本来就在搜这个路径（`$SysRoot/usr/<triple>/lib`），所以装完即生效。
+各 ABI 的 compiler-rt **builtins** 也由本工具链自己逐 ABI 编好（`lib/clang/23/lib/linux/libclang_rt.builtins-*-android.a`）。
+`riscv64` 因该包不含 riscv64 目录，只能编译、不能链接。
 
 **AArch64 上可用的 -mcpu/-mtune**（`clang --print-supported-cpus`）：apple-a7..a19/m1..m5/s4..s10 全系、
 cortex-a32~a78c/a510~a725/x1~x925/r82/r82ae、neoverse-e1/n1~n3/v1~v3(ae)、oryon-1、thunderx/t99/t110/xt81~88、
