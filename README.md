@@ -78,38 +78,33 @@ packaging/patches/          本包用到的 3 个 LLVM 补丁 + Termux 官方 rp
 
 ## 支持哪些 CPU 编译目标（重要）
 
-**clang / clang++（本包主前端）只编 AArch64 系**。编译目标是构建时定的
-（`LLVM_TARGETS_TO_BUILD`），装好后不能加。
+**clang / clang++ 现在是全目标构建**（`LLVM_TARGETS_TO_BUILD=all`，`clang --print-targets` = **52 个**注册目标），
+由本包自身源码构建并正规 install（rpath 由 CMake 写为 `$ORIGIN/../lib`）。
 
-实测（`clang --print-targets`，仅 5 个注册目标）：
+`--target=` 只编译（`-c`）实测（2026-10-05，`-9`/`-10`）：
 
-```
-aarch64     aarch64_32   aarch64_be   arm64   arm64_32
-```
+| 目标 | 只编译 | 链接可执行 |
+|---|---|---|
+| `aarch64-linux-android30`（默认） | ✅ | ✅（含运行） |
+| `armv7a-linux-androideabi24/30`、`armv7-linux-androideabi` | ✅ ELF 32-bit ARM | ❌ 缺该 ABI 的 sysroot 件（见下） |
+| `x86_64-linux-android30` | ✅ ELF x86-64 | ❌ 同上 |
+| `i686-linux-android30` | ✅ ELF i386 | ❌ 同上 |
+| `riscv64-linux-android30` | ✅ ELF RISC-V | ❌ 同上 |
+| `wasm32-unknown-unknown` | ✅ wasm 模块 | —（无需 sysroot） |
+| `amdgcn-amd-amdhsa` | ✅ ELF AMDGPU | — |
+| `nvptx64-nvidia-cuda` | 需显式 GPU 架构（`--cuda-gpu-arch=`） | — |
 
-| 想编什么 | 结果 |
-|---|---|
-| `--target=aarch64-linux-android30`（默认） | ✅ |
-| `--target=armv7a-linux-androideabi30` / `armv7-unknown-linux-...` | ❌ `No available targets are compatible with triple "armv7-..."` |
-| `--target=x86_64-linux-android30` / `i686-...` | ❌ 同上 |
-| `--target=riscv64-...` / `wasm32-...` / `amdgcn-...` / `nvptx64-...` 等 | ❌ 同上（clang 前端无这些后端） |
+**为什么非 aarch64 还链不上**：链接可执行需要该 ABI 的 **sysroot 件** ——
+`libc.so`、`libunwind.a`、`crtbegin_*.o`/`crtend_*.o`、以及 C++ 时的 `libc++_shared.so`。
+Termux 的 `$PREFIX` 只提供 **aarch64** 那一套（`ndk-sysroot` 仅含各 ABI 的**头文件**）。
+本包已自带各 ABI 的 compiler-rt **builtins**（`lib/clang/23/lib/linux/libclang_rt.builtins-{aarch64,arm,i686,x86_64,riscv64}-android.a`，
+由本工具链自己按 `--target` + `-isystem <ABI 头目录>` 逐 ABI 编出），所以链接现在**只差** sysroot 那一族。
+补齐办法：引入 NDK 的 `sysroot/usr/lib/<triple>/<api>/`（或对应架构的 Termux 包）。
 
-rustc 同理：`rustc --print target-list` 能列出 armv7 等 target spec，但
-`rustc --target armv7-linux-androideabi` 实际 codegen 报
-`No available targets are compatible with triple "arm-none-linux-android"`。
-
-**例外**：包内自带旧 `llc`/`opt`/`llvm-mc` 等 rc1 期工具（链接
-`libLLVM.so.23.1-rc1`）注册了 10 个后端（AArch64/AMDGPU/BPF/LoongArch/
-NVPTX/RISCV/SPIRV/SystemZ/VE/WebAssembly）。这些是 IR 层工具，**不能**给
-clang 前端加目标，32 位 ARM 也不在其中。想编 armv7：要么找带 ARM(32) 后端
-的交叉 clang，要么用本包配 NDK 的 arm 工具链。
-
-**AArch64 上可用的 -mcpu/-mtune**（`clang --print-supported-cpus`，101 个）：
-apple-a7..a19/m1..m5/s4..s10 全系、cortex-a32~a78c/a510~a725/x1~x925/
-r82/r82ae、neoverse-e1/n1~n3/v1~v3(ae)、oryon-1、thunderx/t99/t110/xt81~88、
-ampere1(a/b/c)、a64fx、fujitsu-monaka、grace、gb10、exynos-m3~m5、kryo、
-falkor、carmel、tsv110、cyclone、olympus、rigel、saphira、cobalt-100、
-armagicpu、c1-nano/premium/pro/ultra、generic、native。
+**AArch64 上可用的 -mcpu/-mtune**（`clang --print-supported-cpus`）：apple-a7..a19/m1..m5/s4..s10 全系、
+cortex-a32~a78c/a510~a725/x1~x925/r82/r82ae、neoverse-e1/n1~n3/v1~v3(ae)、oryon-1、thunderx/t99/t110/xt81~88、
+ampere1(a/b/c)、a64fx、fujitsu-monaka、grace、gb10、exynos-m3~m5、kryo、falkor、carmel、tsv110、cyclone、
+olympus、rigel、saphira、cobalt-100、armagicpu、c1-nano/premium/pro/ultra、generic、native。
 
 通用命令：`clang --print-targets`、`clang --print-supported-cpus`。
 

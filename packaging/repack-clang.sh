@@ -55,13 +55,35 @@ after=$(find "$STAGE$PREFIX/lib/clang/23" -mindepth 1 2>/dev/null | wc -l)
 echo "  clang/23 条目 $before -> $after（合入，未删）"
 echo "  linux/ 下的 builtins: $(ls "$STAGE$PREFIX/lib/clang/23/lib/linux/" 2>/dev/null | grep -c builtins) 个"
 
+echo "=== 3b/5 合入逐 ABI builtins（多目标循环编出来的）==="
+BF=${BUILTINS_FROM:-$HOME/llvm-builtins-stage$PREFIX/lib/linux}
+if [ -d "$BF" ]; then
+  n=0
+  for a in "$BF"/libclang_rt.builtins-*-android.a; do
+    [ -e "$a" ] || continue
+    install -m "$(stat -c '%a' "$a")" "$a" "$STAGE$PREFIX/lib/clang/23/lib/linux/$(basename "$a")"
+    n=$((n+1)); echo "  ✅ $(basename "$a")（$(stat -c '%s' "$a") B）"
+  done
+  echo "  合计 $n 份；linux/ 下现有 builtins: $(ls "$STAGE$PREFIX/lib/clang/23/lib/linux/" | grep -c builtins)"
+else
+  echo "  ⚠ 未找到 $BF（先跑 run-builtins-loop.sh）"
+fi
+
 echo "=== 4/5 暂存区验收（跑起来才算）==="
 SL=$STAGE$PREFIX/lib:$PREFIX/lib
-printf 'int f(int x){return x+1;}\n' > "$STAGE/t.c"
+# 探针必须放在暂存树**之外**：写成 $STAGE/t.c 会变成包根 /t.c，安装时 dpkg 往只读的
+# 文件系统根写 → 整个安装中断（本条是实测踩过的）
+WORK=$HOME/.hermes/cache/scratch/clangrepack-$$; mkdir -p "$WORK"
+printf 'int f(int x){return x+1;}\n' > "$WORK/t.c"
 echo "  clang 版本: $(env -u LD_PRELOAD LD_LIBRARY_PATH=$SL $STAGE$PREFIX/bin/clang-23 --version 2>&1 | head -1)"
 echo "  目标数: $(env -u LD_PRELOAD LD_LIBRARY_PATH=$SL $STAGE$PREFIX/bin/clang-23 --print-targets 2>/dev/null | grep -cE '^\s+[a-z0-9_]+ +-')"
-env -u LD_PRELOAD LD_LIBRARY_PATH=$SL $STAGE$PREFIX/bin/clang-23 --target=armv7a-linux-androideabi24 -c "$STAGE/t.c" -o "$STAGE/t.o" 2>&1 | head -2
-echo "  armv7 产物: $(file -b "$STAGE/t.o" 2>/dev/null)"
+env -u LD_PRELOAD LD_LIBRARY_PATH=$SL $STAGE$PREFIX/bin/clang-23 --target=armv7a-linux-androideabi24 -c "$WORK/t.c" -o "$WORK/t.o" 2>&1 | head -2
+echo "  armv7 产物: $(file -b "$WORK/t.o" 2>/dev/null)"
+
+echo "=== 4b/5 守卫：包内不得有 data/ 与 DEBIAN 之外的路径 ==="
+stray=$(cd "$STAGE" && ls -A | grep -vxE 'DEBIAN|data' | tr '\n' ' ')
+if [ -n "$stray" ]; then echo "  ❌ 暂存区根有杂项: $stray"; ls -la "$STAGE" | head; die "包根混入非 data/ 路径（安装会失败）"; fi
+echo "  ✅ 干净（暂存区根只有 data/ 与 DEBIAN）"
 
 echo "=== 5/5 重建 deb ==="
 mkdir -p "$STAGE/DEBIAN"; chmod 755 "$STAGE/DEBIAN"
