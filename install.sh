@@ -27,6 +27,22 @@ API=https://api.github.com/repos/$REPO
 
 die() { echo "错误: $*" >&2; exit 1; }
 
+# 按哈希值校验，而不是 `sha256sum -c` 的路径校验：
+# 发布用的 .sha256 曾经是构建阶段生成的，带构建机绝对路径（/data/data/.../toolchain-deb-out/xxx.deb），
+# 下载者执行 sha256sum -c 会去找那个不存在的路径 → 校验必然失败；在构建机上则会误验旧文件。
+# 这里只取第一行的哈希值，和本地实算值比较，对绝对路径 / "*" 二进制标记都免疫。
+check_sha256() {
+  local file=$1 sumfile=$2 expect got
+  expect=$(awk 'NF>=2 {print $1; exit}' "$sumfile" 2>/dev/null | tr 'A-Z' 'a-z')
+  [ ${#expect} -eq 64 ] || die "$(basename "$sumfile") 里没有 64 位 sha256（内容: $(head -c 120 "$sumfile" 2>/dev/null)）"
+  got=$(sha256sum "$file" | awk '{print $1}' | tr 'A-Z' 'a-z')
+  [ "$got" = "$expect" ] || die "sha256 不匹配：期望 $expect，实际 $got（下载损坏或 release 被替换）"
+  echo "  sha256: $got ✔"
+}
+
+# 测试脚本（tools/test-publish-chain.sh）用 LLVMRM_SOURCE_ONLY=1 只引入上面的函数
+if [ "${LLVMRM_SOURCE_ONLY:-0}" = "1" ]; then return 0 2>/dev/null || exit 0; fi
+
 echo "=== 0/5 环境检查 ==="
 [ -n "${PREFIX:-}" ] || die "不是 Termux 环境（\$PREFIX 未设置）"
 case "$(uname -m)" in
@@ -84,9 +100,9 @@ GOT_PKG=$(dpkg-deb -f "$TMP/$DEB" Package 2>/dev/null || true)
 [ "$GOT_PKG" = "$PKG" ] || die "下载到的包是 '${GOT_PKG:-无法识别}'，不是 $PKG，拒绝安装"
 echo "  Package 字段: $GOT_PKG ✔"
 if [ -f "$TMP/$DEB.sha256" ]; then
-  (cd "$TMP" && sha256sum -c "$DEB.sha256") || die "sha256 校验失败，文件可能损坏"
+  check_sha256 "$TMP/$DEB" "$TMP/$DEB.sha256"
 else
-  echo "  本地 sha256: $(sha256sum "$TMP/$DEB" | cut -d' ' -f1)"
+  echo "  本地 sha256: $(sha256sum "$TMP/$DEB" | cut -d' ' -f1)（release 未提供 .sha256，无法比对）"
 fi
 
 echo "=== 4/5 apt install ./$DEB ==="
@@ -101,6 +117,6 @@ echo "  clang : $(clang --version | head -1)"
 echo "  rustc : $(rustc -vV | head -1) / LLVM $(rustc -vV | sed -n 's/^LLVM version: //p')"
 echo "  cargo : $(cargo --version)"
 echo "  mold  : $(mold --version)"
-echo "  许可  : $(ls $PREFIX/share/doc/$PKG/copyright)"
+echo "  许可  : $(ls $PREFIX/share/doc/$PKG/copyright 2>/dev/null || echo '未随包提供（package 里没有 share/doc/'"$PKG"'/copyright，属于打包缺陷）')"
 echo
 echo "完成。回滚见 README 的 卸载/回滚 一节。"
