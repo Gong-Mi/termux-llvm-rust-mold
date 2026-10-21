@@ -4,12 +4,12 @@ Termux（aarch64）自举工具链**三合一包**：一个 `.deb` 同时提供
 
 | 组件 | 版本 | 说明 |
 |---|---|---|
-| LLVM / Clang / LLD / MLIR / compiler-rt | 23.1.3 | PGO 构建（IR 插桩自举训练，profile `llvm-23.1.pgo.profdata`，9441 runs） |
-| Rust | 1.100.0-nightly (rustc `0d38a8426` 2026-09-24, cargo `98a09e7e7` 2026-09-21) | stage2 自举，动态链接本包 `libLLVM.so.23.1` |
-| mold | 2.42.1 (`6fc6e191`, 2026-09-23) | MIT；`mold` + `ld.mold` + `mold-wrapper.so`；带 Termux TLS 补丁（见 patches/0005） |
+| LLVM / Clang / LLD / MLIR / compiler-rt | 24.0.0git (`bd4c4541`) | PGO 构建（IR 插桩自举训练 + 多参数/多 ISA 训练矩阵，profile 88,799,888 B） |
+| Rust | 1.101.0 (rustc `91e426a05` 2026-10-13) | stage2 自举；rustc 后端仍 pin LLVM 23.1，包内随带 `libLLVM.so.23.1-rc1` 供其运行时使用 |
+| mold | 3.0.0 (`c5227892`) | MIT；`mold` + `ld.mold`；带 Termux TLS 补丁（见 patches/0005） |
 
 包名 `llvm-rust-system`，`Architecture: aarch64`。
-下载 **约 306 MiB**，安装后 **约 2.44 GB**（8045 个文件）。
+下载 **355 MiB**（371,885,752 B），安装后 **约 2.45 GiB**（8520 个常规文件）。
 
 安装时**替换**官方包：`clang`、`lld`、`llvm`、`libllvm`、`rust`、`libcompiler-rt`、`mold`
 （control 里 `Conflicts/Replaces/Provides` 全占）。这不是 Termux 官方仓库的包。
@@ -22,12 +22,12 @@ Termux（aarch64）自举工具链**三合一包**：一个 `.deb` 同时提供
 # 方式一：脚本（自动下载最新版 + 校验 sha256 + apt 安装）
 curl -fsSL https://raw.githubusercontent.com/Gong-Mi/termux-llvm-rust-mold/main/install.sh | bash
 
-# 方式二：手动（latest 指最新一个 release）
-DEB=llvm-rust-system_23.1.3+rust1.100.0nightly+mold2.42.1-3_aarch64.deb
+# 方式二：手动（latest 指最新一个 release；文件名随版本变化，以 release 页为准）
+DEB=llvm-rust-system_24.0.0git+rust1.101.0+mold3.0.0-3_aarch64.deb
 BASE=https://github.com/Gong-Mi/termux-llvm-rust-mold/releases/latest/download
 curl -LO $BASE/$DEB
 curl -LO $BASE/$DEB.sha256
-sha256sum -c $DEB.sha256
+sha256sum -c $DEB.sha256        # .sha256 必须是 basename 形式，发布脚本会强制重建
 apt install -y ./$DEB      # 用 apt 而不是 dpkg -i，让它自动移除冲突的官方包
 ```
 
@@ -36,9 +36,9 @@ apt install -y ./$DEB      # 用 apt 而不是 dpkg -i，让它自动移除冲�
 ```bash
 dpkg -V llvm-rust-system          # 无输出 = 文件与包记录一致
 dpkg -l llvm-rust-system | tail -1
-clang --version | head -1         # 23.1.3
-rustc -vV | tail -1               # LLVM version: 23.1.3
-mold --version
+clang --version | head -1         # clang version 24.0.0git
+rustc -vV | tail -1               # LLVM version: 23.1.0（rustc 后端 pin 23.1）
+mold --version                    # mold 3.0.0
 ls $PREFIX/share/doc/llvm-rust-system/copyright
 ```
 
@@ -69,11 +69,13 @@ dpkg -i clang_21.1.8-3_aarch64.deb lld_21.1.8-3_aarch64.deb llvm_21.1.8-3_aarch6
 
 ```
 install.sh                  一键安装（取最新 release + sha256 校验 + apt install）
+tools/verify-release.sh     发布验货：结构/清单/许可/断链/跨ABI/LTO 件 + 可选解包校验与冒烟
+tools/test-publish-chain.sh 发布链路回归测试（.sha256 形状、install.sh 校验逻辑）
 tools/publish-release.sh    发布新版本：<deb> → tag + release + asset + 远端核对
 tools/prune-releases.sh     只保留最近 N 个版本 release，旧的连 tag 一起删
 packaging/repack-with-license.sh  在已有 .deb 数据层上注入 share/doc 许可、升版本号
 packaging/copyright         随包安装的许可/来源文件（DEP-5 格式）
-packaging/patches/          本包用到的 3 个 LLVM 补丁 + Termux 官方 rpath 补丁（见下）
+packaging/patches/          本包用到的 LLVM 补丁 + Termux 官方 rpath 补丁（见下）
 ```
 
 ## 支持哪些 CPU 编译目标（重要）
@@ -101,7 +103,8 @@ pkg install ndk-multilib ndk-multilib-native-static ndk-multilib-native-stubs
 
 它们把各 ABI 的 sysroot 件装到 **`$PREFIX/<triple>/lib`**（`libc.so`/`libunwind.a`/`crtbegin_*`/`libc++_shared.so` 共 27 项 × 4 个 ABI），
 而本包 clang 的驱动补丁本来就在搜这个路径（`$SysRoot/usr/<triple>/lib`），所以装完即生效。
-各 ABI 的 compiler-rt **builtins** 也由本工具链自己逐 ABI 编好（`lib/clang/23/lib/linux/libclang_rt.builtins-*-android.a`）。
+各 ABI 的 compiler-rt **builtins** 也要一起带（`lib/clang/24/lib/linux/libclang_rt.builtins-<arch>-android.a`）——
+缺了它们 `--target=armv7a-...` 只编译能过、**链接会报 `cannot open ...libclang_rt.builtins.a`**（`-3` 就是这种状态）。
 `riscv64` 因该包不含 riscv64 目录，只能编译、不能链接。
 
 **AArch64 上可用的 -mcpu/-mtune**（`clang --print-supported-cpus`）：apple-a7..a19/m1..m5/s4..s10 全系、
@@ -144,9 +147,12 @@ LD_LIBRARY_PATH=$PREFIX/lib ./hello
 
 | 组件 | 上游 | commit |
 |---|---|---|
-| LLVM/Clang/LLD/MLIR/compiler-rt 23.1.3 | https://github.com/llvm/llvm-project `release/23.x` | `e3f9cdcbe52a91c2dfe3b03b5cf3973aade7b969` |
-| Rust 1.100.0-nightly | https://github.com/rust-lang/rust | rustc `0d38a842626a6e3b70e2c1efd76a8f22d2556d73` |
-| mold 2.42.1 | https://github.com/rui314/mold | `6fc6e1916f383ea3ea319e12d3df4daee33267d9` |
+| LLVM/Clang/LLD/MLIR/compiler-rt 24.0.0git | https://github.com/llvm/llvm-project | `bd4c45414c6181409b67f765fac04ca5e3036289` |
+| Rust 1.101.0 | https://github.com/rust-lang/rust | rustc `91e426a0518d5bb3672330c5238ccda6fd26fb54` |
+| mold 3.0.0 | https://github.com/rui314/mold | `c522789231c9de8afb35722bf8c859341f1fcef6` |
+
+`-3` 的完整 provenance（LLVM 源 sha、PGO profile sha256/大小、plain 与 PGO 两组 stage2==stage3 产物哈希、
+构建时用的 rustc/rustdoc/cargo/mold 版本）见包内 `share/doc/llvm-rust-system/provenance.json`。
 
 附加的 Termux 兼容补丁（4 个）：
 
@@ -159,8 +165,8 @@ LD_LIBRARY_PATH=$PREFIX/lib ./hello
 - LLVM 工具 RUNPATH 统一为 `$ORIGIN/../lib`（clang/libLLVM），避免构建树路径泄漏；
 - 链接器脚本（cmake 生成的 `libc++.so` 文本文件）换成真实符号链接；
 - Rust `librustc_driver.so` 的 SONAME 用 patchelf 修正为文件名（Android linker 按文件名解析 `NEEDED`，没有 ldconfig）；
-- `libLLVM.so.23.1-rc1` 与 `libLLVM.so.23.1` 共存，旧的 23.1.0rc1 工具仍可用；
-- BOLT **未包含**：AArch64 上 `llvm-bolt` 运行时在 `initSizeMap` 崩溃，上游用 `DISABLE_LLVM_LINK_LLVM_DYLIB` 静态链接才可用，官方不修，本地不复现。
+- `libLLVM.so.23.1-rc1` 只给 rustc 1.101 的后端用（rustc 编译时 pin 的 LLVM 是 23.1），LLVM 24 工具链用 `libLLVM.so.24.0git`；
+- BOLT **随包发布了但不可用**：AArch64 上 `llvm-bolt` 处理任何 ELF 都 abort（`LLVM ERROR: annotation value out of range`，rc=134；带 `--emit-relocs` 也一样）。用不到就忽略，别指望它做 AArch64 优化。
 
 ### 构建配方
 
@@ -172,33 +178,49 @@ LD_LIBRARY_PATH=$PREFIX/lib ./hello
 - `build-rust.sh`、`build-mold.sh`、`build-mold-selfhosted.sh`、`build-deb-rust.sh`、`packaging/repack-mold.sh` —— 可执行脚本
 - `bootstrap.toml`、`packaging/apply-rust-patches.py`、`packaging/rust-patches/` —— rust 侧配置与补丁序列
 
-包内**完全不带源码**（既无独立的 rust-src 组件，也不含 rustc-dev 附带的 crate 源码），
-只保留 `rustc_private` 需要的 `librustc_driver*.so`/`.rmeta`；源码可从
-`static.rust-lang.org/dist/<date>/rustc-nightly-src.tar.xz` 按配方自取。
+包内**不带源码**，只保留 `rustc_private` 需要的 `librustc_driver*.so`/`.rmeta`。`-3` 里
+`lib/rustlib/{src,rustc-src}/rust` 是指向构建机 `/data/data/com.termux/files/home/rust` 的绝对符号链接，
+装到别的机器上是断链（rust-src 不可用）；需要源码请按配方从
+`static.rust-lang.org/dist/<date>/rustc-nightly-src.tar.xz` 自取。
 `libLLVM` 统一为全目标构建，clang 与 rustc 共用同一份。
 
 ## 兼容性与风险
 
 - 仅 **aarch64**（arm64）Termux，`$PREFIX=/data/data/com.termux/files/usr`，clang 默认目标 `aarch64-unknown-linux-android30`。
-- 依赖：`libc++ libffi libxml2 ncurses zlib zstd libedit openssl libcurl`（apt 会自动装）。
+- 依赖：`libc++ libcurl libedit libgit2 liblzma libxml2 ncurses ncurses-ui-libs openssl zlib zstd`（control 的 Depends，apt 会自动装）。
 - 本包替换系统包，`pkg upgrade` 时官方 `clang`/`rust` 若被重新安装会与本包冲突（`Conflicts` 会拦下）。想长期保留自定义工具链，建议 `apt-mark manual llvm-rust-system` 并留意 `apt upgrade` 的输出。
 - 未在其它 Android 版本/ROM 上验证，仅作者自用设备（MTK 平台，Android 17）实测。
 - 二进制来自作者本机自举构建，不是 Termux 官方产物；**不要**拿本包的构建问题给 termux-packages 提 issue。
 
 ## 许可
 
-包内 `$PREFIX/share/doc/llvm-rust-system/copyright` 含全部许可全文：
+包内应有 `$PREFIX/share/doc/llvm-rust-system/copyright`（DEP-5，由 `packaging/repack-with-license.sh` 注入）：
 
 - LLVM / Clang / LLD / MLIR / compiler-rt：Apache-2.0 WITH LLVM-exception
 - Rust：MIT / Apache-2.0 双许可
 - mold：MIT (c) 2023 Rui Ueyama
 
+**注意**：`-3` 这个 release **漏了**这个文件（连带 `share/doc/{rust,cargo}` 的许可/版权文件也没打进去），
+`tools/verify-release.sh` 会把它当 FAIL；在补齐并重发之前，请以仓库里的 `packaging/copyright` 与上游许可以为准。
+
 本仓库的脚本与文档：见 `LICENSE`。
 
 ## 版本策略
 
-每个 release 一个 tag，asset 里挂 `.deb` + `.sha256`。每个包约 306 MiB，
+每个 release 一个 tag，asset 里挂 `.deb` + `.sha256`。每个包约 355 MiB，
 仓库只保留最近 2–3 个版本，旧 asset 单独删除（tag 保留）。
+
+`.sha256` 必须是 **basename 形式**（`<hash>  <文件名>`）。构建阶段留下的那份常是
+`sha256sum <绝对路径>` 的产物，直接上传会让下载者的 `sha256sum -c` 去找构建机路径而失败；
+`tools/publish-release.sh` 现在会强制重建并在上传后复核远端 digest/大小。
+
+**发布前验货**（在 Wi-Fi 上跑；默认全量下载，`--extract` 做全量 md5，`--smoke` 跑 clang/rustc/cargo/mold + TLS 探针）：
+
+```bash
+tools/verify-release.sh v24.0.0git+rust1.101.0+mold3.0.0-3 --extract --smoke
+tools/verify-release.sh --deb ./llvm-rust-system_..._aarch64.deb --extract --smoke   # 发布前验本地文件
+tools/test-publish-chain.sh                                                          # 发布链路的回归测试
+```
 
 **非工具链的 release（例如官方回滚集）必须勾选 Pre-release**，否则它比版本 release
 新，会抢走 GitHub 的 `releases/latest` 指针，`releases/latest/download/...` 链接就指错了。
