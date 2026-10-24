@@ -209,6 +209,16 @@ for b in arm i686 x86_64; do
   awk -v re="lib/clang/[0-9]+/lib/linux/libclang_rt\\.builtins-$b-android\\.a$" '$1 ~ /^-/ && $6 ~ re {f = 1} END {exit !f}' "$LIST" \
     || bad "缺跨 ABI compiler-rt: libclang_rt.builtins-$b-android.a（换架构链接会报 cannot open ...builtins.a）"
 done
+# sanitizer 运行时：-5 只带 builtins/fuzzer/profile，`clang -fsanitize=undefined|address`
+# 会报 cannot open .../lib/clang/<ver>/lib/linux/libclang_rt.ubsan_standalone-<arch>-android.so。
+# 本包 Provides: libcompiler-rt，就必须自己带齐（用 packaging/build-sanitizer-runtimes.sh 编）。
+for r in ubsan_standalone ubsan_minimal asan; do
+  awk -v re="lib/clang/[0-9]+/lib/linux/libclang_rt\\.${r}-aarch64-android\\.so$" '$1 ~ /^-/ && $6 ~ re {f = 1} END {exit !f}' "$LIST" \
+    || bad "缺 sanitizer 运行时 libclang_rt.${r}-aarch64-android.so（-fsanitize=undefined/address 会链接失败）"
+done
+if awk -v re="lib/clang/[0-9]+/lib/linux/libclang_rt\\.ubsan_standalone-aarch64-android\\.so$" '$1 ~ /^-/ && $6 ~ re {f = 1} END {exit !f}' "$LIST"; then
+  ok "包内带 sanitizer 运行时（ubsan_standalone / ubsan_minimal / asan）"
+fi
 for w in armv7-linux-androideabi-clang armv7a-linux-androideabi30-clang i686-linux-android-clang \
          i686-linux-android30-clang x86_64-linux-android-clang x86_64-linux-android30-clang; do
   has_path "bin/$w" || bad "缺 per-ABI linker wrapper: bin/$w"
