@@ -91,6 +91,45 @@ packaging/build-sanitizer-runtimes.sh ~/llvm-src-24/compiler-rt ~/llvm-sanitizer
 下变成硬错误（实测某静态验收套件一次 105 处）。下游要么改代码（读一次/`(void)`），
 要么显式 `-Wno-unused-but-set-global`；这属于上游变严，不是包缺陷。
 
+### 1d. 任何 `clang++` wrapper 必须保住 driver mode（实测事故）
+
+为压 §1c 的诊断，下游会顺手在 `$PREFIX/bin` 放一层 shell wrapper。**写成
+`exec /usr/bin/clang-24 "$@"` 会打断整条 C++ 链接链**：`exec` 之后 `argv[0]` 变成
+`clang-24`，clang 按 basename 选驱动，于是按 C 模式收尾，链接行里不再追加
+`-lc++_shared`，任何 `clang++` 链接都报
+```text
+undefined symbol: __cxa_throw
+undefined symbol: std::runtime_error::runtime_error(char const*)
+```
+
+而 `clang++ -c`、`-E`、`-###` 全都正常，所以第一眼很像"库缺失/包坏了"。
+lld 的输出从 `>>> referenced by ...`（引用者）开始，真正的缺符号行在前面，别把
+referenced-by 当缺符号。
+
+正确写法（本机实测通过）：
+
+```sh
+# $PREFIX/bin/clang++（或 clang、clang-24 的同名 wrapper）
+exec /data/data/com.termux/files/usr/bin/clang-24 --driver-mode=g++ "$@"
+```
+
+- `--driver-mode=g++` 在健康工具链上是空操作，只把被 wrapper 丢掉的 argv[0] 语义补回来；
+- **符号链接是安全的**（`clang++ -> clang-24` 保留 argv[0]="clang++"）；只有**脚本 wrapper** 会改
+  写后的 argv[0] —— 所以别用 shell 脚本去 shadow `clang++`；
+- 若 wrapper 同时服务 `clang`（C）与 `clang++`（C++），按 `basename "$0"` 分派：
+  `*++*) exec "$real" --driver-mode=g++ "$@" ;; *) exec "$real" "$@" ;;`
+- 更稳的做法是**不要 shadow `clang++`**：把 `-Wno-...` 只放进具体项目的构建参数
+  （`CFLAGS/CXXFLAGS`），或给该项目单独的 `--config=` 文件，避免全局换掉编译器入口。
+
+装完任何 wrapper 后跑一次自检（本仓 `tools/check-clang-driver-mode.sh`）：
+
+```bash
+sh tools/check-clang-driver-mode.sh   # 期望 "ALL PASS: clang/clang++ driver mode 正常"
+```
+
+它同时验三件事：`clang++ -###` 进 `-cc1plus`、`clang -###` 进 `-cc1`、真实
+`clang++ ... -lc++_shared` 能链接并运行。
+
 ## 2. Rust（设备上原生 stage2）
 
 ```bash
