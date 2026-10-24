@@ -54,6 +54,43 @@ cmake -S llvm-project/llvm -B build-pgouse -G Ninja \
   `compiler-rt/CMakeLists.txt` 里 `if (FUCHSIA OR ANDROID)`。
 * 判据：`llvm-config --targets-built | wc -l`（全目标是几十，AArch64-only 是 5）。
 
+### 1b. compiler-rt sanitizer 运行时（必带，否则 `-fsanitize=` 全废）
+
+包若声明 `Provides: libcompiler-rt`，就必须自己带 sanitizer 运行时——官方 `libcompiler-rt`
+的 `lib/clang/<ver>/lib/linux/libclang_rt.ubsan_standalone-*.so` 不会因为 Provides 而存在。
+实测 -5 的 deb：data.tar.xz 9521 个文件里 `libclang_rt.{ubsan,asan,tsan,msan}*` 命中 **0**，
+只有 builtins/fuzzer/profile/orc；于是 `clang -fsanitize=undefined` 直接报
+
+```
+ld.lld: error: cannot open .../lib/clang/24/lib/linux/libclang_rt.ubsan_standalone-aarch64-android.so
+```
+
+单独编（standalone，不用重编 LLVM）：
+
+```bash
+packaging/build-sanitizer-runtimes.sh ~/llvm-src-24/compiler-rt ~/llvm-sanitizers-stage
+# 关键 cmake 项（脚本里已带）：
+#   -DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON  -DCMAKE_C_COMPILER_TARGET=aarch64-unknown-linux-android24
+#   -DCOMPILER_RT_USE_BUILTINS_LIBRARY=ON -DCOMPILER_RT_BUILD_SANITIZERS=ON
+#   -DCOMPILER_RT_INSTALL_PATH=$(clang -print-resource-dir)
+```
+
+要点：
+
+* **驱动只认 `lib/clang/<ver>/lib/linux/`**（不是 `lib/aarch64-unknown-linux-android24/`）：
+  `clang -fsanitize=undefined -### t.c` 里能看到它找的正是
+  `.../lib/linux/libclang_rt.ubsan_standalone-aarch64-android.so`。
+* 只装 sanitizer 一族，别覆盖 LLVM 主构建给的 builtins/profile。
+* 判据两条缺一不可：链接成功 **且** 真实报错（有符号溢出 → `runtime error: signed integer overflow`；
+  空指针写 → `AddressSanitizer: SEGV`）。
+* 发布前用 `tools/verify-release.sh` 断言包内存在 `ubsan_standalone / ubsan_minimal / asan`。
+
+### 1c. clang 24 的新诊断（下游 `-Werror` 会中招）
+
+`-Wunused-but-set-global` 进了 `-Wall`：老代码里「set 但不读」的探针全局量在 `-Werror`
+下变成硬错误（实测某静态验收套件一次 105 处）。下游要么改代码（读一次/`(void)`），
+要么显式 `-Wno-unused-but-set-global`；这属于上游变严，不是包缺陷。
+
 ## 2. Rust（设备上原生 stage2）
 
 ```bash
